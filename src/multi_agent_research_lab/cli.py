@@ -78,7 +78,7 @@ def multi_agent(
     except StudentTodoError as exc:
         console.print(Panel.fit(str(exc), title="Expected TODO", style="yellow"))
         raise typer.Exit(code=2) from exc
-    console.print(result.model_dump_json(indent=2))
+    console.print(result.model_dump_json(indent=2), markup=False)
 
 
 if __name__ == "__main__":

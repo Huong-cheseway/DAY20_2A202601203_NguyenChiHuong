@@ -1,16 +1,139 @@
 """Search client abstraction for ResearcherAgent."""
 
-from multi_agent_research_lab.core.errors import StudentTodoError
+import json
+import re
+from pathlib import Path
+from typing import Any
+
 from multi_agent_research_lab.core.schemas import SourceDocument
 
 
 class SearchClient:
-    """Provider-agnostic search client skeleton."""
+    """Offline-first search client for local benchmark corpus retrieval."""
+
+    _CORPUS_TOPICS_DIR = (
+        Path(__file__).resolve().parents[3]
+        / "ai_agent_offline_research_corpus_30_topics_v2"
+        / "topics"
+    )
+
+    def __init__(self, topics_dir: Path | None = None) -> None:
+        self._topics_dir = topics_dir or self._CORPUS_TOPICS_DIR
+        self._topics_cache = self._load_topics()
 
     def search(self, query: str, max_results: int = 5) -> list[SourceDocument]:
-        """Search for documents relevant to a query.
+        """Search local corpus for relevant source documents.
 
-        TODO(student): Implement with Tavily, Bing, SerpAPI, internal docs, or a local mock.
+        If corpus files are unavailable, return deterministic fallback documents so
+        the lab pipeline remains runnable without external APIs.
         """
 
-        raise StudentTodoError("TODO(student): implement SearchClient.search")
+        if not self._topics_cache:
+            return self._fallback_documents(query, max_results)
+
+        query_terms = self._tokenize(query)
+        ranked_topics = sorted(
+            self._topics_cache,
+            key=lambda item: self._topic_score(item, query_terms),
+            reverse=True,
+        )
+        best_topic = ranked_topics[0]
+        sources = best_topic.get("knowledge_base", {}).get("source_documents", [])
+
+        ranked_sources = sorted(
+            sources,
+            key=lambda item: self._source_score(item, query_terms),
+            reverse=True,
+        )
+
+        selected: list[SourceDocument] = []
+        for source in ranked_sources[: max(1, max_results)]:
+            document_id = str(source.get("document_id", "unknown"))
+            title = str(source.get("title", "Untitled source"))
+            full_text = str(source.get("full_text", ""))
+            snippet = self._to_snippet(full_text)
+            selected.append(
+                SourceDocument(
+                    title=title,
+                    url=source.get("provenance_url"),
+                    snippet=snippet,
+                    metadata={
+                        "document_id": document_id,
+                        "document_class": source.get("document_class"),
+                        "is_synthetic": bool(source.get("is_synthetic", False)),
+                        "topic_id": best_topic.get("benchmark_metadata", {}).get("topic_id"),
+                        "topic_name": best_topic.get("topic", {}).get("name"),
+                    },
+                )
+            )
+        return selected
+
+    def _load_topics(self) -> list[dict[str, Any]]:
+        if not self._topics_dir.exists():
+            return []
+
+        topics: list[dict[str, Any]] = []
+        for path in sorted(self._topics_dir.glob("*.json")):
+            try:
+                topics.append(json.loads(path.read_text(encoding="utf-8")))
+            except (OSError, json.JSONDecodeError):
+                continue
+        return topics
+
+    @staticmethod
+    def _tokenize(text: str) -> set[str]:
+        return {token for token in re.findall(r"[a-z0-9]+", text.lower()) if len(token) > 2}
+
+    def _topic_score(self, topic_payload: dict[str, Any], query_terms: set[str]) -> int:
+        topic = topic_payload.get("topic", {})
+        haystack = " ".join(
+            [
+                str(topic.get("name", "")),
+                str(topic.get("research_question", "")),
+                " ".join(str(tag) for tag in topic.get("tags", [])),
+            ]
+        )
+        topic_terms = self._tokenize(haystack)
+        overlap = len(topic_terms & query_terms)
+        return overlap + (1 if topic.get("name") else 0)
+
+    def _source_score(self, source_payload: dict[str, Any], query_terms: set[str]) -> int:
+        haystack = " ".join(
+            [
+                str(source_payload.get("title", "")),
+                str(source_payload.get("document_class", "")),
+                str(source_payload.get("full_text", ""))[:1500],
+            ]
+        )
+        return len(self._tokenize(haystack) & query_terms)
+
+    @staticmethod
+    def _to_snippet(text: str, limit: int = 320) -> str:
+        compact = " ".join(text.split())
+        if len(compact) <= limit:
+            return compact
+        return f"{compact[: limit - 3]}..."
+
+    @staticmethod
+    def _fallback_documents(query: str, max_results: int) -> list[SourceDocument]:
+        docs = [
+            SourceDocument(
+                title="Offline corpus not found: baseline architecture note",
+                url=None,
+                snippet=(
+                    "Use a simple baseline first, then add role specialization and evaluate "
+                    "quality, latency, and cost trade-offs."
+                ),
+                metadata={"document_id": "fallback-1", "query": query},
+            ),
+            SourceDocument(
+                title="Offline corpus not found: coordination risk note",
+                url=None,
+                snippet=(
+                    "Multi-agent systems can improve coverage but may regress due to handoff "
+                    "errors and duplicated work without guardrails."
+                ),
+                metadata={"document_id": "fallback-2", "query": query},
+            ),
+        ]
+        return docs[: max(1, max_results)]
