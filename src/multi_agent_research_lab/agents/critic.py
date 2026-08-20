@@ -1,7 +1,7 @@
-"""Optional critic agent skeleton for bonus work."""
+"""Optional deterministic critic for citation and completion checks."""
 
 from multi_agent_research_lab.agents.base import BaseAgent
-from multi_agent_research_lab.core.errors import StudentTodoError
+from multi_agent_research_lab.core.schemas import AgentName, AgentResult
 from multi_agent_research_lab.core.state import ResearchState
 
 
@@ -11,9 +11,33 @@ class CriticAgent(BaseAgent):
     name = "critic"
 
     def run(self, state: ResearchState) -> ResearchState:
-        """Validate final answer and append findings.
+        """Validate final-answer presence and citation coverage."""
 
-        TODO(student): Add fact-check, citation coverage, or hallucination checks.
-        """
+        if not state.final_answer:
+            state.errors.append("CriticAgent: final answer is missing")
+            state.add_trace_event("critic.failed", {"reason": "missing final answer"})
+            return state
 
-        raise StudentTodoError("TODO(student): implement CriticAgent.run")
+        answer = state.final_answer.lower()
+        missing = [
+            str(doc.metadata.get("document_id", "unknown"))
+            for doc in state.sources
+            if f"[{str(doc.metadata.get('document_id', 'unknown')).lower()}]" not in answer
+        ]
+        coverage = (
+            1.0 if not state.sources else (len(state.sources) - len(missing)) / len(state.sources)
+        )
+        findings = f"Citation coverage: {coverage:.0%}. " + (
+            f"Missing source IDs: {', '.join(missing)}." if missing else "All source IDs cited."
+        )
+        state.agent_results.append(
+            AgentResult(
+                agent=AgentName.CRITIC,
+                content=findings,
+                metadata={"citation_coverage": coverage, "missing_source_ids": missing},
+            )
+        )
+        state.add_trace_event(
+            "critic.done", {"citation_coverage": coverage, "missing_source_ids": missing}
+        )
+        return state

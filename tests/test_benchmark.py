@@ -4,13 +4,14 @@ from multi_agent_research_lab.evaluation.benchmark import (
     run_multi_agent_pipeline,
     run_single_agent_baseline,
 )
+from tests.fakes import StubLLMClient
 
 
 def test_run_benchmark_populates_metrics() -> None:
     _, metrics = run_benchmark(
         "multi_agent",
         "Single-agent vs multi-agent architectures for complex research tasks",
-        run_multi_agent_pipeline,
+        lambda query: run_multi_agent_pipeline(query, StubLLMClient()),
     )
     assert metrics.latency_seconds >= 0
     assert metrics.estimated_cost_usd is not None
@@ -24,7 +25,8 @@ def test_run_benchmark_suite_returns_aggregated_rows() -> None:
         [
             "Single-agent vs multi-agent architectures for complex research tasks",
             "Cost latency and parallelism in multi-agent research",
-        ]
+        ],
+        llm_client=StubLLMClient(),
     )
     run_names = {item.run_name for item in metrics}
     assert run_names == {"single_agent", "multi_agent"}
@@ -32,5 +34,5 @@ def test_run_benchmark_suite_returns_aggregated_rows() -> None:
 
 
 def test_baseline_runner_returns_final_answer() -> None:
-    state = run_single_agent_baseline("Explain multi-agent systems")
+    state = run_single_agent_baseline("Explain multi-agent systems", StubLLMClient())
     assert state.final_answer

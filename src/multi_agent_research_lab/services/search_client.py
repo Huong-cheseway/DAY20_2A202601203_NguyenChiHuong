@@ -11,6 +11,18 @@ from multi_agent_research_lab.core.schemas import SourceDocument
 class SearchClient:
     """Offline-first search client for local benchmark corpus retrieval."""
 
+    _STOPWORDS = {
+        "and",
+        "art",
+        "compare",
+        "for",
+        "research",
+        "state",
+        "summary",
+        "the",
+        "write",
+    }
+
     _CORPUS_TOPICS_DIR = (
         Path(__file__).resolve().parents[3]
         / "ai_agent_offline_research_corpus_30_topics_v2"
@@ -32,23 +44,23 @@ class SearchClient:
             return self._fallback_documents(query, max_results)
 
         query_terms = self._tokenize(query)
-        ranked_topics = sorted(
-            self._topics_cache,
-            key=lambda item: self._topic_score(item, query_terms),
-            reverse=True,
-        )
-        best_topic = ranked_topics[0]
-        sources = best_topic.get("knowledge_base", {}).get("source_documents", [])
-
-        ranked_sources = sorted(
-            sources,
-            key=lambda item: self._source_score(item, query_terms),
-            reverse=True,
-        )
+        candidates: list[tuple[int, dict[str, Any], dict[str, Any]]] = []
+        for topic in self._topics_cache:
+            topic_score = self._topic_score(topic, query_terms)
+            sources = topic.get("knowledge_base", {}).get("source_documents", [])
+            for source in sources:
+                source_score = self._source_score(source, query_terms)
+                candidates.append((topic_score + (source_score * 2), topic, source))
+        candidates.sort(key=lambda item: item[0], reverse=True)
 
         selected: list[SourceDocument] = []
-        for source in ranked_sources[: max(1, max_results)]:
+        seen_documents: set[str] = set()
+        for _, topic, source in candidates:
             document_id = str(source.get("document_id", "unknown"))
+            dedupe_key = f"{document_id}:{source.get('title', '')}"
+            if dedupe_key in seen_documents:
+                continue
+            seen_documents.add(dedupe_key)
             title = str(source.get("title", "Untitled source"))
             full_text = str(source.get("full_text", ""))
             snippet = self._to_snippet(full_text)
@@ -61,11 +73,13 @@ class SearchClient:
                         "document_id": document_id,
                         "document_class": source.get("document_class"),
                         "is_synthetic": bool(source.get("is_synthetic", False)),
-                        "topic_id": best_topic.get("benchmark_metadata", {}).get("topic_id"),
-                        "topic_name": best_topic.get("topic", {}).get("name"),
+                        "topic_id": topic.get("benchmark_metadata", {}).get("topic_id"),
+                        "topic_name": topic.get("topic", {}).get("name"),
                     },
                 )
             )
+            if len(selected) >= max(1, max_results):
+                break
         return selected
 
     def _load_topics(self) -> list[dict[str, Any]]:
@@ -82,7 +96,16 @@ class SearchClient:
 
     @staticmethod
     def _tokenize(text: str) -> set[str]:
-        return {token for token in re.findall(r"[a-z0-9]+", text.lower()) if len(token) > 2}
+        normalized = re.sub(
+            r"\bgraphrag\b",
+            "graph rag retrieval augmented generation",
+            text.lower(),
+        )
+        return {
+            token
+            for token in re.findall(r"[a-z0-9]+", normalized)
+            if len(token) > 2 and token not in SearchClient._STOPWORDS
+        }
 
     def _topic_score(self, topic_payload: dict[str, Any], query_terms: set[str]) -> int:
         topic = topic_payload.get("topic", {})

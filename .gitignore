@@ -11,3 +11,6 @@ build/
 reports/*.json
 reports/*.md
 !.gitkeep
+!reports/benchmark_report.md
+!reports/exit_ticket.md
+!reports/peer_review_step5.md

@@ -1,38 +1,54 @@
-# Design Template
+# Thiết kế hệ thống
 
-## Problem
+## Bài toán
 
-TODO(student): Viết task cụ thể hệ thống cần xử lý.
+Hệ thống nhận một câu hỏi nghiên cứu, tìm nguồn trong corpus offline, đánh giá độ tin cậy,
+tổng hợp câu trả lời có citation và lưu trace để so sánh với single-agent baseline.
 
-## Why multi-agent?
+## Vì sao dùng multi-agent?
 
-TODO(student): Giải thích vì sao single-agent chưa đủ.
+Bài toán có ba artefact khác nhau: nguồn, phân tích độ tin cậy và bản viết cuối. Tách vai trò
+giúp kiểm tra từng handoff, phát hiện nguồn yếu và đo chi phí từng bước. Với câu hỏi ngắn,
+single-agent vẫn phù hợp hơn vì ít latency và chi phí hơn.
 
-## Agent roles
+## Vai trò
 
-| Agent | Responsibility | Input | Output | Failure mode |
+| Agent | Trách nhiệm | Input | Output | Failure mode |
 |---|---|---|---|---|
-| Supervisor | TODO | TODO | TODO | TODO |
-| Researcher | TODO | TODO | TODO | TODO |
-| Analyst | TODO | TODO | TODO | TODO |
-| Writer | TODO | TODO | TODO | TODO |
+| Supervisor | Chọn bước tiếp theo và dừng workflow | Toàn bộ shared state | Route tiếp theo | Vòng lặp; chặn bằng max iterations |
+| Researcher | Tìm và xếp hạng nguồn offline | Query, max_sources | Sources, research_notes | Không có corpus; dùng tài liệu fallback |
+| Analyst | So sánh và đánh giá nguồn | Query, sources | analysis_notes | LLM lỗi/rate limit; retry rồi deterministic fallback |
+| Writer | Viết đúng câu hỏi và gắn citation | Query, analysis, sources | final_answer | LLM lỗi/rate limit; retry rồi deterministic fallback |
 
 ## Shared state
 
-TODO(student): Liệt kê fields và lý do cần field đó.
+- `request`: query, audience và giới hạn nguồn.
+- `iteration`, `route_history`: kiểm soát vòng lặp và giải thích routing.
+- `sources`, `research_notes`, `analysis_notes`, `final_answer`: artefact handoff.
+- `agent_results`: metadata model, token, cost và trạng thái fallback.
+- `trace`, `errors`: quan sát và chẩn đoán lỗi.
 
 ## Routing policy
 
-TODO(student): Vẽ hoặc mô tả graph.
+```text
+START -> Supervisor
+  thiếu sources        -> Researcher -> Supervisor
+  thiếu analysis_notes -> Analyst    -> Supervisor
+  chưa có final_answer -> Writer     -> Supervisor
+  có answer/lỗi/quá max_iterations   -> END
+```
 
 ## Guardrails
 
-- Max iterations:
-- Timeout:
-- Retry:
-- Fallback:
-- Validation:
+- Max iterations: 6.
+- Timeout: 60 giây cho mỗi async worker node và HTTP provider call.
+- Retry: tối đa 2 lần ở LLM client; LangGraph có bounded retry policy.
+- Fallback: Analyst/Writer dùng kết quả deterministic và ghi `fallback_used`.
+- Validation: Pydantic kiểm tra query, sources, state và benchmark metrics.
 
 ## Benchmark plan
 
-TODO(student): Liệt kê query, metric, expected outcome.
+- Ba query trong `configs/lab_default.yaml` chạy qua cả baseline và multi-agent.
+- Metrics: latency, token/cost Groq, quality proxy, citation coverage, failure rate.
+- Kỳ vọng: baseline nhanh/rẻ hơn; multi-agent có citation và trace tốt hơn.
+- Quality proxy phải được xác nhận bằng peer review, không coi là ground truth.

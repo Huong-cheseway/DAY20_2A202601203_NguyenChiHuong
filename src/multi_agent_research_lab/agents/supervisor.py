@@ -15,11 +15,7 @@ class SupervisorAgent(BaseAgent):
 
         settings = get_settings()
 
-        if (
-            state.iteration >= settings.max_iterations
-            or state.final_answer
-            or state.errors
-        ):
+        if state.iteration >= settings.max_iterations or state.final_answer or state.errors:
             route = "done"
         elif not state.sources:
             route = "researcher"

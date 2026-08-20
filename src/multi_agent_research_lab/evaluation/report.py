@@ -14,6 +14,7 @@ def render_markdown_report(metrics: list[BenchmarkMetrics]) -> str:
         "",
         "This report compares the same query set on single-agent baseline",
         "and multi-agent workflow.",
+        "Quality is an automated structural proxy (0-10); peer review should validate it.",
         "",
         "| Run | Latency (s) | Cost (USD) | Quality | Citation cov. | Failure rate | Notes |",
         "|---|---:|---:|---:|---:|---:|---|",
@@ -55,11 +56,18 @@ def render_markdown_report(metrics: list[BenchmarkMetrics]) -> str:
             "- Prefer baseline for simple requests; prefer multi-agent",
             "  when evidence synthesis matters.",
             "",
+            "## Failure Mode and Mitigation",
+            "",
+            "- Provider rate limits (HTTP 429) may increase latency during a benchmark suite.",
+            "- The LLM client uses bounded retries and provider timeouts; production runs should",
+            "  also pace requests and preserve the provider's Retry-After delay.",
+            "- If the LLM remains unavailable, Analyst and Writer use a deterministic fallback",
+            "  and mark `fallback_used` in agent metadata and trace events.",
+            "",
             "## Trace Evidence",
             "",
             "- Local span log: `reports/trace_spans.jsonl`",
-            "- Optional provider mode: set `LANGSMITH_API_KEY` or `LANGFUSE_PUBLIC_KEY` + "
-            "`LANGFUSE_SECRET_KEY` to tag traces by backend.",
+            "- LangSmith project: `multi-agent-research-lab` (when configured).",
         ]
     )
     return "\n".join(lines) + "\n"

@@ -69,10 +69,18 @@ Mở `.env` và điền key cần thiết.
 
 ```bash
 OPENAI_API_KEY=...
+# hoặc dùng Groq qua OpenAI-compatible API
+GROQ_API_KEY=...
+GROQ_BASE_URL=https://api.groq.com/openai/v1
+GROQ_MODEL=openai/gpt-oss-20b
 # optional
 LANGSMITH_API_KEY=...
+LANGSMITH_TRACING=true
 TAVILY_API_KEY=...
 ```
+
+Chỉ cần cấu hình một LLM provider. Khi có `GROQ_API_KEY`, lab ưu tiên Groq;
+nếu không có Groq thì dùng OpenAI, và chỉ dùng local fallback khi cả hai key đều trống.
 
 ### 3. Chạy smoke test
 
@@ -95,6 +103,12 @@ Lệnh này chỉ chạy khung baseline tối giản. Học viên cần tự tri
 ```bash
 python -m multi_agent_research_lab.cli multi-agent \
   --query "Research GraphRAG state-of-the-art and write a 500-word summary"
+```
+
+Chạy benchmark và tạo lại report bằng số liệu provider thật:
+
+```bash
+python -m multi_agent_research_lab.cli benchmark
 ```
 
 Mặc định lệnh sẽ báo các `TODO` cần làm. Đây là chủ đích của starter repo.

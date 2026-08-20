@@ -76,10 +76,10 @@ def _score_quality(state: ResearchState, citation_coverage: float) -> float:
     return min(10.0, round(score, 2))
 
 
-def run_single_agent_baseline(query: str) -> ResearchState:
+def run_single_agent_baseline(query: str, llm_client: LLMClient | None = None) -> ResearchState:
     state = ResearchState(request=ResearchQuery(query=query))
     with trace_span("benchmark.single_agent"):
-        response = LLMClient().complete(
+        response = (llm_client or LLMClient()).complete(
             system_prompt=(
                 "You are a concise research assistant. Answer accurately and "
                 "state uncertainty when evidence is missing."
@@ -99,10 +99,10 @@ def run_single_agent_baseline(query: str) -> ResearchState:
     return state
 
 
-def run_multi_agent_pipeline(query: str) -> ResearchState:
+def run_multi_agent_pipeline(query: str, llm_client: LLMClient | None = None) -> ResearchState:
     with trace_span("benchmark.multi_agent"):
         state = ResearchState(request=ResearchQuery(query=query))
-        return MultiAgentWorkflow().run(state)
+        return MultiAgentWorkflow(llm_client=llm_client).run(state)
 
 
 def run_benchmark(
@@ -132,13 +132,21 @@ def run_benchmark(
     return state, metrics
 
 
-def run_benchmark_suite(queries: list[str]) -> list[BenchmarkMetrics]:
+def run_benchmark_suite(
+    queries: list[str], llm_client: LLMClient | None = None
+) -> list[BenchmarkMetrics]:
     """Run baseline and multi-agent for each query, then average by run_name."""
+
+    def baseline_runner(item: str) -> ResearchState:
+        return run_single_agent_baseline(item, llm_client)
+
+    def multi_runner(item: str) -> ResearchState:
+        return run_multi_agent_pipeline(item, llm_client)
 
     rows: list[BenchmarkMetrics] = []
     for query in queries:
-        rows.append(run_benchmark("single_agent", query, run_single_agent_baseline)[1])
-        rows.append(run_benchmark("multi_agent", query, run_multi_agent_pipeline)[1])
+        rows.append(run_benchmark("single_agent", query, baseline_runner)[1])
+        rows.append(run_benchmark("multi_agent", query, multi_runner)[1])
 
     aggregated: dict[str, list[BenchmarkMetrics]] = {"single_agent": [], "multi_agent": []}
     for row in rows:
