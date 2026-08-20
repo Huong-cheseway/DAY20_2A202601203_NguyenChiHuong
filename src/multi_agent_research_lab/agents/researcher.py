@@ -28,17 +28,19 @@ class ResearcherAgent(BaseAgent):
             f"[{doc.metadata.get('document_id', idx + 1)}] {doc.title}: {doc.snippet}"
             for idx, doc in enumerate(docs)
         )
+        estimated_tokens = max(1, len(state.research_notes) // 4)
         state.agent_results.append(
             AgentResult(
                 agent=AgentName.RESEARCHER,
                 content=state.research_notes,
-                metadata={"num_sources": len(docs)},
+                metadata={"num_sources": len(docs), "estimated_tokens": estimated_tokens},
             )
         )
         state.add_trace_event(
             "researcher.done",
             {
                 "num_sources": len(docs),
+                "estimated_tokens": estimated_tokens,
                 "topic": docs[0].metadata.get("topic_name") if docs else None,
             },
         )

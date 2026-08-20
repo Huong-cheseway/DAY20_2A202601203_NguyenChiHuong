@@ -42,14 +42,21 @@ class WriterAgent(BaseAgent):
             "Citations:\n"
             + "\n".join(citations)
         )
+        estimated_tokens = max(1, len(final_answer) // 4)
 
         state.final_answer = final_answer
         state.agent_results.append(
             AgentResult(
                 agent=AgentName.WRITER,
                 content=final_answer,
-                metadata={"num_citations": len(citations)},
+                metadata={
+                    "num_citations": len(citations),
+                    "estimated_tokens": estimated_tokens,
+                },
             )
         )
-        state.add_trace_event("writer.done", {"num_citations": len(citations)})
+        state.add_trace_event(
+            "writer.done",
+            {"num_citations": len(citations), "estimated_tokens": estimated_tokens},
+        )
         return state

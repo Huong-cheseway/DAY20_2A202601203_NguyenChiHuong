@@ -55,17 +55,26 @@ class AnalystAgent(BaseAgent):
             "- Treat cost/latency improvements as conditional on task complexity.\n"
             "- Mark synthetic evidence explicitly in final writing to avoid overclaiming."
         )
+        estimated_tokens = max(1, len(analysis) // 4)
 
         state.analysis_notes = analysis
         state.agent_results.append(
             AgentResult(
                 agent=AgentName.ANALYST,
                 content=analysis,
-                metadata={"public_sources": public_count, "synthetic_sources": synthetic_count},
+                metadata={
+                    "public_sources": public_count,
+                    "synthetic_sources": synthetic_count,
+                    "estimated_tokens": estimated_tokens,
+                },
             )
         )
         state.add_trace_event(
             "analyst.done",
-            {"public_sources": public_count, "synthetic_sources": synthetic_count},
+            {
+                "public_sources": public_count,
+                "synthetic_sources": synthetic_count,
+                "estimated_tokens": estimated_tokens,
+            },
         )
         return state

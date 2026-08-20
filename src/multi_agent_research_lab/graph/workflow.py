@@ -12,6 +12,7 @@ from multi_agent_research_lab.agents import (
 )
 from multi_agent_research_lab.core.errors import StudentTodoError
 from multi_agent_research_lab.core.state import ResearchState
+from multi_agent_research_lab.observability.tracing import trace_span
 
 
 class MultiAgentWorkflow:
@@ -60,7 +61,24 @@ class MultiAgentWorkflow:
 
     def _run_supervisor(self, payload: dict[str, Any]) -> dict[str, Any]:
         state = ResearchState.model_validate(payload)
-        state = self.supervisor.run(state)
+        with trace_span(
+            "workflow.supervisor",
+            {
+                "iteration": state.iteration,
+                "route_history_size": len(state.route_history),
+            },
+        ) as span:
+            state = self.supervisor.run(state)
+            span["attributes"]["next_route"] = (
+                state.route_history[-1] if state.route_history else "done"
+            )
+            state.add_trace_event(
+                "trace.workflow.supervisor",
+                {
+                    "span_id": span["span_id"],
+                    "route": span["attributes"]["next_route"],
+                },
+            )
         return state.model_dump()
 
     def _run_researcher(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -74,12 +92,29 @@ class MultiAgentWorkflow:
 
     def _run_worker(self, payload: dict[str, Any], worker: Any) -> dict[str, Any]:
         state = ResearchState.model_validate(payload)
-        try:
-            state = worker.run(state)
-        except StudentTodoError as exc:
-            # Step 2 keeps orchestration runnable while worker logic is completed in Step 3.
-            state.errors.append(str(exc))
-            state.add_trace_event("worker.todo", {"agent": worker.name, "error": str(exc)})
+        with trace_span(
+            f"workflow.worker.{worker.name}",
+            {
+                "iteration": state.iteration,
+                "sources": len(state.sources),
+                "has_analysis": bool(state.analysis_notes),
+            },
+        ) as span:
+            try:
+                state = worker.run(state)
+                span["attributes"]["status"] = "ok"
+            except StudentTodoError as exc:
+                # Keep orchestration runnable while learner TODOs are incomplete.
+                state.errors.append(str(exc))
+                state.add_trace_event("worker.todo", {"agent": worker.name, "error": str(exc)})
+                span["attributes"]["status"] = "todo"
+            state.add_trace_event(
+                f"trace.workflow.worker.{worker.name}",
+                {
+                    "span_id": span["span_id"],
+                    "status": span["attributes"]["status"],
+                },
+            )
         return state.model_dump()
 
     @staticmethod
