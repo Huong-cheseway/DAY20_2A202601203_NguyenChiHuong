@@ -1,5 +1,6 @@
 """Command-line entrypoint for the lab starter."""
 
+from time import perf_counter
 from typing import Annotated
 
 import typer
@@ -13,6 +14,7 @@ from multi_agent_research_lab.core.schemas import ResearchQuery
 from multi_agent_research_lab.core.state import ResearchState
 from multi_agent_research_lab.graph.workflow import MultiAgentWorkflow
 from multi_agent_research_lab.observability.logging import configure_logging
+from multi_agent_research_lab.services.llm_client import LLMClient
 
 app = typer.Typer(help="Multi-Agent Research Lab starter CLI")
 console = Console()
@@ -41,16 +43,25 @@ def _parse_query(query: str) -> ResearchQuery:
 def baseline(
     query: Annotated[str, typer.Option("--query", "-q", help="Research query")],
 ) -> None:
-    """Run a minimal single-agent baseline placeholder."""
+    """Run the single-agent baseline and report latency and token usage."""
 
     _init()
     request = _parse_query(query)
-    state = ResearchState(request=request)
-    state.final_answer = (
-        "Baseline skeleton response. TODO(student): replace this with a real single-agent "
-        "implementation and record latency/cost/quality metrics."
+    started = perf_counter()
+    response = LLMClient().complete(
+        system_prompt=(
+            "You are a concise research assistant. Answer the user's question accurately "
+            "and state uncertainty when evidence is missing."
+        ),
+        user_prompt=request.query,
     )
-    console.print(Panel.fit(state.final_answer, title="Single-Agent Baseline"))
+    latency = perf_counter() - started
+    console.print(Panel.fit(response.content, title="Single-Agent Baseline"))
+    console.print(
+        f"Latency: {latency:.3f}s | Input tokens: {response.input_tokens or 'N/A'} | "
+        f"Output tokens: {response.output_tokens or 'N/A'} | Cost: "
+        f"{response.cost_usd if response.cost_usd is not None else 'N/A'}"
+    )
 
 
 @app.command("multi-agent")
